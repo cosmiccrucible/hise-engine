@@ -1890,9 +1890,46 @@ public:
 
 	bool setMinimumSamplerate(double newMinimumSampleRate)
 	{
+		useCustomOversampling = false;
 		minimumSamplerate = jlimit<double>(1.0, 96000.0 * 4.0, newMinimumSampleRate);
 		return refreshOversampling();
 	}
+
+	/** Sets the oversampling factor used during realtime playback.
+
+	    Allowed values are 1 (no oversampling) and 2. The change is applied
+	    immediately and rebuilds the processing graph, so expect a short gap
+	    while voices are killed.
+	*/
+	bool setOnlineOversamplingFactor(int newFactor);
+
+	/** Sets the oversampling factor used during offline rendering.
+
+	    Allowed values are 1, 2 and 4. The factor is picked up when the engine
+	    enters non-realtime mode (HISE's own renderer or an offline bounce).
+	*/
+	bool setOfflineOversamplingFactor(int newFactor);
+
+	/** Returns the oversampling factor that is currently in use. */
+	int getCurrentOversamplingFactor() const { return currentOversampleFactor; }
+
+	/** Applies the factor for the current realtime / offline mode.
+
+	    Must only be called while audio is suspended: during prepare or in the
+	    offline render transition of AudioRendererBase. Returns true if the
+	    factor changed and the graph was rebuilt.
+	*/
+	bool applyOversamplingForCurrentMode();
+
+	/** Overrides the reported latency in samples, before oversampler latency.
+
+	    This replaces the old script-level Engine.setLatencySamples() behaviour:
+	    the oversampler latency is added on top of this value.
+	*/
+	void setManualLatencySamples(int latency);
+
+	/** Recomputes reported latency = manual latency + oversampler latency. */
+	void updateReportedLatency();
 
 	void setMaximumBlockSize(int newBlockSize);
 
@@ -2211,6 +2248,8 @@ private:
 
 	bool refreshOversampling();
 
+	int getRequestedOversamplingFactor() const;
+
 	double getOriginalSamplerate() const { return originalSampleRate; }
 
 	int getOriginalBufferSize() const { return originalBufferSize; }
@@ -2343,6 +2382,16 @@ private:
 	int maximumBlockSize = HISE_MAX_PROCESSING_BLOCKSIZE;
 	int currentOversampleFactor = 1;
 
+	/** Oversampling factors per mode (owner decision: online 1/2, offline 1/2/4). */
+	int onlineOversamplingFactor = 1;
+	int offlineOversamplingFactor = 4;
+
+	/** Once a script sets a factor explicitly, minimumSamplerate is ignored. */
+	bool useCustomOversampling = false;
+
+	/** Latency requested by script; oversampler latency is added on top. */
+	int manualLatencySamples = 0;
+
 	int originalBufferSize = 0;
 	double originalSampleRate = 0.0;
 	
@@ -2421,7 +2470,7 @@ private:
 	const ScriptWatchTable *scriptWatchTable;
 #endif
 
-    AudioProcessor* thisAsProcessor;
+    AudioProcessor* thisAsProcessor = nullptr;
     
 	Array<WeakReference<BufferPreviewListener>> previewListeners;
 	Array<WeakReference<TempoListener>> tempoListeners;

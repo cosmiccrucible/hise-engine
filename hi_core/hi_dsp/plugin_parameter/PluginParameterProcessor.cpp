@@ -718,21 +718,26 @@ void PluginParameterAudioProcessor::changeProgramName(int, const String&)
 
 void PluginParameterAudioProcessor::handleLatencyInPrepareToPlay(double samplerate)
 {
-	if (getLatencySamples() != lastLatencySamples && getLatencySamples() != 0)
+	if (getLatencySamples() != lastLatencySamples)
 	{
 		lastLatencySamples = getLatencySamples();
 		updateHostDisplay();
 
 		int numChannels = AudioProcessor::getBusesLayout().getMainOutputChannels();
 
+		// Clear the bypass delay lines first so a latency change back to zero
+		// cannot leave a stale delay behind.
 		bypassedLatencyDelays.clear();
 
-		for (int i = 0; i < numChannels; i++)
+		if (lastLatencySamples > 0)
 		{
-			bypassedLatencyDelays.add(new DelayLine<32768>());
-			bypassedLatencyDelays.getLast()->prepareToPlay(samplerate);
-			bypassedLatencyDelays.getLast()->setFadeTimeSamples(0);
-			bypassedLatencyDelays.getLast()->setDelayTimeSamples(lastLatencySamples);
+			for (int i = 0; i < numChannels; i++)
+			{
+				bypassedLatencyDelays.add(new DelayLine<32768>());
+				bypassedLatencyDelays.getLast()->prepareToPlay(samplerate);
+				bypassedLatencyDelays.getLast()->setFadeTimeSamples(0);
+				bypassedLatencyDelays.getLast()->setDelayTimeSamples(lastLatencySamples);
+			}
 		}
 	}
 }

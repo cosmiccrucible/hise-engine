@@ -1690,6 +1690,7 @@ bool AudioRendererBase::renderAudio()
 	
 	dynamic_cast<AudioProcessor*>(getMainController())->setNonRealtime(true);
 	getMainController()->getSampleManager().handleNonRealtimeState();
+	getMainController()->applyOversamplingForCurrentMode();
 
 	if(sendArtificialTransportMessages)
 		getMainController()->sendArtificialTransportMessage(true);
@@ -1783,6 +1784,7 @@ bool AudioRendererBase::renderAudio()
 	getMainController()->getKillStateHandler().setCurrentExportThread(nullptr);
 	dynamic_cast<AudioProcessor*>(getMainController())->setNonRealtime(false);
 	getMainController()->getSampleManager().handleNonRealtimeState();
+	getMainController()->applyOversamplingForCurrentMode();
 	return true;
 }
 

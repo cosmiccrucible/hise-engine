@@ -1181,6 +1181,9 @@ struct ScriptingApi::Engine::Wrapper
 	API_METHOD_WRAPPER_0(Engine, getBufferSize);
 	API_METHOD_WRAPPER_0(Engine, getNumPluginChannels);
 	API_METHOD_WRAPPER_1(Engine, setMinimumSampleRate);
+	API_METHOD_WRAPPER_1(Engine, setOnlineOversamplingFactor);
+	API_METHOD_WRAPPER_1(Engine, setOfflineOversamplingFactor);
+	API_METHOD_WRAPPER_0(Engine, getOversamplingFactor);
 	API_VOID_METHOD_WRAPPER_1(Engine, setMaximumBlockSize);
 	API_METHOD_WRAPPER_1(Engine, getMidiNoteName);
 	API_METHOD_WRAPPER_1(Engine, getMidiNoteFromName);
@@ -1339,6 +1342,9 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_0(getBufferSize);
 	ADD_API_METHOD_0(getNumPluginChannels);
 	ADD_TYPED_API_METHOD_1(setMinimumSampleRate, VarTypeChecker::Number);
+	ADD_TYPED_API_METHOD_1(setOnlineOversamplingFactor, VarTypeChecker::Number);
+	ADD_TYPED_API_METHOD_1(setOfflineOversamplingFactor, VarTypeChecker::Number);
+	ADD_API_METHOD_0(getOversamplingFactor);
 	ADD_TYPED_API_METHOD_1(setMaximumBlockSize, VarTypeChecker::Number);
 	ADD_API_METHOD_0(createThreadSafeStorage);
 	ADD_API_METHOD_1(getMidiNoteName);
@@ -1624,6 +1630,21 @@ void ScriptingApi::Engine::setGlobalFont(String fontName)
 bool ScriptingApi::Engine::setMinimumSampleRate(double minimumSampleRate)
 {
 	return getProcessor()->getMainController()->setMinimumSamplerate(minimumSampleRate);
+}
+
+bool ScriptingApi::Engine::setOnlineOversamplingFactor(int factor)
+{
+	return getProcessor()->getMainController()->setOnlineOversamplingFactor(factor);
+}
+
+bool ScriptingApi::Engine::setOfflineOversamplingFactor(int factor)
+{
+	return getProcessor()->getMainController()->setOfflineOversamplingFactor(factor);
+}
+
+int ScriptingApi::Engine::getOversamplingFactor() const
+{
+	return const_cast<MainController*>(getProcessor()->getMainController())->getCurrentOversamplingFactor();
 }
 
 void ScriptingApi::Engine::setMaximumBlockSize(int numSamplesPerBlock)
@@ -2419,8 +2440,7 @@ int ScriptingApi::Engine::getLatencySamples() const
 
 void ScriptingApi::Engine::setLatencySamples(int latency)
 {
-	auto ap = dynamic_cast<AudioProcessor*>(getScriptProcessor()->getMainController_());
-	ap->setLatencySamples(latency);
+	getProcessor()->getMainController()->setManualLatencySamples(latency);
 }
 
 int ScriptingApi::Engine::getMidiNoteFromName(String midiNoteName) const

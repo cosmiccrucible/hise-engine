@@ -790,9 +790,24 @@ void MainController::sendHisePresetLoadMessage(NotificationType n)
 	}
 }
 
+int MainController::getRequestedOversamplingFactor() const
+{
+	const bool offline = getSampleManager().isNonRealtime();
+
+	int factor = offline ? offlineOversamplingFactor : onlineOversamplingFactor;
+
+	if (!useCustomOversampling && minimumSamplerate > 0.0 && getOriginalSamplerate() > 0.0)
+	{
+		const auto minimumFactor = jmax(1, (int) (minimumSamplerate / getOriginalSamplerate()));
+		factor = jlimit(1, 8, nextPowerOfTwo(minimumFactor));
+	}
+
+	return jlimit(1, 8, factor);
+}
+
 bool MainController::refreshOversampling()
 {
-	auto requiredOversamplingFactor = (double)jlimit(1, 8, nextPowerOfTwo((int)(minimumSamplerate / getOriginalSamplerate())));
+	auto requiredOversamplingFactor = (double) getRequestedOversamplingFactor();
 
 	int numChannelsOfOversampler = oversampler != nullptr ? (int)oversampler->numChannels : -1;
 
@@ -833,7 +848,95 @@ bool MainController::refreshOversampling()
 	return false;
 }
 
+bool MainController::setOnlineOversamplingFactor(int newFactor)
+{
+	if (newFactor != 1 && newFactor != 2)
+	{
+		DBG("Online oversampling factor must be 1 or 2");
+		return false;
+	}
 
+	useCustomOversampling = true;
+	onlineOversamplingFactor = newFactor;
+
+	// No rebuild while the offline factor is active. The new value applies on
+	// the next transition back to realtime.
+	refreshOversampling();
+
+	return true;
+}
+
+bool MainController::setOfflineOversamplingFactor(int newFactor)
+{
+	if (newFactor != 1 && newFactor != 2 && newFactor != 4)
+	{
+		DBG("Offline oversampling factor must be 1, 2 or 4");
+		return false;
+	}
+
+	useCustomOversampling = true;
+	offlineOversamplingFactor = newFactor;
+
+	refreshOversampling();
+
+	return true;
+}
+
+bool MainController::applyOversamplingForCurrentMode()
+{
+	const int requestedFactor = getRequestedOversamplingFactor();
+
+	if (requestedFactor == currentOversampleFactor)
+		return false;
+
+	// This path is only valid while the audio thread is suspended: during
+	// prepare or in the offline render transition.
+	jassert(!getKillStateHandler().isAudioRunning());
+
+	const auto numChannels = multiChannelBuffer.getNumChannels();
+
+	if (numChannels <= 0)
+		return false;
+
+	ScopedPointer<juce::dsp::Oversampling<float>> newOversampler;
+
+	if (requestedFactor != 1)
+	{
+		newOversampler = new juce::dsp::Oversampling<float>(numChannels,
+			(int) log2((double) requestedFactor),
+			juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR);
+	}
+
+	// Audio is suspended here, so no lock is required. Do not hold getLock()
+	// across prepareToPlay(): a channel change inside it can trigger
+	// refreshOversampling(), which takes the same lock.
+	std::swap(oversampler, newOversampler);
+	currentOversampleFactor = requestedFactor;
+	prepareToPlay(getOriginalSamplerate(), getOriginalBufferSize());
+
+	return true;
+}
+
+void MainController::setManualLatencySamples(int latency)
+{
+	manualLatencySamples = jmax(0, latency);
+	updateReportedLatency();
+}
+
+void MainController::updateReportedLatency()
+{
+	auto ap = dynamic_cast<AudioProcessor*>(this);
+
+	if (ap == nullptr)
+		return;
+
+	int oversamplerLatency = 0;
+
+	if (oversampler != nullptr)
+		oversamplerLatency = roundToInt(oversampler->getLatencyInSamples());
+
+	ap->setLatencySamples(manualLatencySamples + oversamplerLatency);
+}
 
 void MainController::processMidiOutBuffer(MidiBuffer& mb, int numSamples)
 {
@@ -1860,6 +1963,9 @@ void MainController::prepareToPlay(double sampleRate_, int samplesPerBlock)
 
 	if (oversampler != nullptr)
 		oversampler->initProcessing(getOriginalBufferSize());
+
+	// Report the oversampler latency to the host on top of any script request.
+	updateReportedLatency();
 
 	auto changed = oldBlockSize != processingBufferSize.get() ||
 				   oldSampleRate != processingSampleRate;
